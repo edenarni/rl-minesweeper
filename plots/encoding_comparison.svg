@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520">
+  <rect width="1200" height="520" fill="#ffffff"/>
+  <text x="40" y="36" font-family="Arial, sans-serif" font-size="26" fill="#111">DQN Encoding Comparison</text>
+  <text x="40" y="62" font-family="Arial, sans-serif" font-size="14" fill="#555">Variants: Initial single-channel, failed normalized single-channel, and new 2-channel encoding</text>
+
+  <!-- Panel outlines -->
+  <rect x="40" y="90" width="360" height="380" fill="#fafafa" stroke="#d8d8d8"/>
+  <rect x="420" y="90" width="360" height="380" fill="#fafafa" stroke="#d8d8d8"/>
+  <rect x="800" y="90" width="360" height="380" fill="#fafafa" stroke="#d8d8d8"/>
+
+  <!-- Titles -->
+  <text x="220" y="120" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#222">Win Rate (%)</text>
+  <text x="600" y="120" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#222">Average Reward</text>
+  <text x="980" y="120" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#222">Average Steps</text>
+
+  <!-- Win rate bars: scale 0..50 -->
+  <line x1="70" y1="430" x2="370" y2="430" stroke="#888"/>
+  <rect x="90" y="183.4" width="70" height="246.6" fill="#4c78a8"/>
+  <rect x="180" y="268.0" width="70" height="162.0" fill="#f58518"/>
+  <rect x="270" y="155.8" width="70" height="274.2" fill="#54a24b"/>
+  <text x="125" y="175" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#222">41.10</text>
+  <text x="215" y="260" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#222">27.00</text>
+  <text x="305" y="148" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#222">45.70</text>
+
+  <!-- Reward bars: shifted baseline at -6 .. 10 -->
+  <line x1="450" y1="430" x2="750" y2="430" stroke="#888"/>
+  <line x1="450" y1="334" x2="750" y2="334" stroke="#bbb" stroke-dasharray="4 4"/>
+  <text x="446" y="338" text-anchor="end" font-family="Arial, sans-serif" font-size="11" fill="#666">0</text>
+  <rect x="470" y="207.8" width="70" height="126.2" fill="#4c78a8"/>
+  <rect x="560" y="300.2" width="70" height="33.8" fill="#f58518"/>
+  <rect x="650" y="174.9" width="70" height="159.1" fill="#54a24b"/>
+  <text x="505" y="200" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#222">6.626</text>
+  <text x="595" y="293" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#222">1.761</text>
+  <text x="685" y="167" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#222">7.955</text>
+
+  <!-- Steps bars: scale 3.5..5.1 -->
+  <line x1="830" y1="430" x2="1130" y2="430" stroke="#888"/>
+  <rect x="850" y="169.2" width="70" height="260.8" fill="#4c78a8"/>
+  <rect x="940" y="285.9" width="70" height="144.1" fill="#f58518"/>
+  <rect x="1030" y="185.0" width="70" height="245.0" fill="#54a24b"/>
+  <text x="885" y="161" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#222">4.885</text>
+  <text x="975" y="278" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#222">4.391</text>
+  <text x="1065" y="177" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" fill="#222">4.788</text>
+
+  <!-- Labels -->
+  <text x="125" y="452" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#333">Initial</text>
+  <text x="215" y="452" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#333">Norm-1ch</text>
+  <text x="305" y="452" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#333">2-ch</text>
+
+  <text x="505" y="452" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#333">Initial</text>
+  <text x="595" y="452" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#333">Norm-1ch</text>
+  <text x="685" y="452" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#333">2-ch</text>
+
+  <text x="885" y="452" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#333">Initial</text>
+  <text x="975" y="452" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#333">Norm-1ch</text>
+  <text x="1065" y="452" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#333">2-ch</text>
+
+  <!-- Legend -->
+  <rect x="40" y="484" width="16" height="12" fill="#4c78a8"/>
+  <text x="62" y="494" font-family="Arial, sans-serif" font-size="12" fill="#333">Initial single-channel</text>
+  <rect x="250" y="484" width="16" height="12" fill="#f58518"/>
+  <text x="272" y="494" font-family="Arial, sans-serif" font-size="12" fill="#333">Normalized single-channel (degraded)</text>
+  <rect x="565" y="484" width="16" height="12" fill="#54a24b"/>
+  <text x="587" y="494" font-family="Arial, sans-serif" font-size="12" fill="#333">2-channel (hidden mask + revealed normalized)</text>
+</svg>

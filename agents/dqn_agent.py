@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
-from typing import Deque, List, Tuple
+from typing import Deque, List, Literal, Tuple
 
 import numpy as np
 import torch
@@ -15,8 +15,8 @@ Action = Tuple[int, int]
 Transition = Tuple[np.ndarray, Action, float, np.ndarray, bool]
 
 
-class DQN(nn.Module):
-    """Small MLP that maps board state -> Q-value for each board cell."""
+class MLPDQN(nn.Module):
+    """Small MLP that maps flattened state -> Q-value for each board cell."""
 
     def __init__(self, input_dim: int, output_dim: int) -> None:
         super().__init__()
@@ -30,6 +30,26 @@ class DQN(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x)
+
+
+class CNNDQN(nn.Module):
+    """Small CNN that maps 2-channel board state -> Q-value for each board cell."""
+
+    def __init__(self, rows: int, cols: int) -> None:
+        super().__init__()
+        self.rows = rows
+        self.cols = cols
+        self.net = nn.Sequential(
+            nn.Conv2d(2, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(64, 1, kernel_size=1),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        out = self.net(x)  # [B, 1, rows, cols]
+        return out.view(x.shape[0], self.rows * self.cols)
 
 
 class DQNAgent:
@@ -49,12 +69,16 @@ class DQNAgent:
         target_update_every: int = 200,
         seed: int | None = None,
         device: str | None = None,
+        model_type: Literal["mlp", "cnn"] = "mlp",
     ) -> None:
         """Initialize DQN components."""
         self.rows = rows
         self.cols = cols
         self.num_actions = rows * cols
-        self.state_dim = rows * cols
+        self.state_dim = 2 * rows * cols
+        self.model_type = model_type.lower()
+        if self.model_type not in {"mlp", "cnn"}:
+            raise ValueError("model_type must be 'mlp' or 'cnn'")
 
         self.gamma = gamma
         self.epsilon = epsilon
@@ -72,8 +96,12 @@ class DQNAgent:
         else:
             self.device = torch.device(device)
 
-        self.policy_net = DQN(self.state_dim, self.num_actions).to(self.device)
-        self.target_net = DQN(self.state_dim, self.num_actions).to(self.device)
+        if self.model_type == "mlp":
+            self.policy_net: nn.Module = MLPDQN(self.state_dim, self.num_actions).to(self.device)
+            self.target_net: nn.Module = MLPDQN(self.state_dim, self.num_actions).to(self.device)
+        else:
+            self.policy_net = CNNDQN(self.rows, self.cols).to(self.device)
+            self.target_net = CNNDQN(self.rows, self.cols).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
@@ -83,9 +111,27 @@ class DQNAgent:
         self.memory: Deque[Transition] = deque(maxlen=memory_size)
         self.learn_steps = 0
 
-    def _flatten_observation(self, observation: np.ndarray) -> np.ndarray:
-        """Flatten board observation into 1D float array."""
-        return observation.astype(np.float32).reshape(-1)
+    def _encode_observation(self, observation: np.ndarray) -> np.ndarray:
+        """Build a 2-channel board state.
+
+        Channel 1 (hidden mask):
+        - 1.0 where cell is hidden (observation == -1)
+        - 0.0 where cell is revealed
+
+        Channel 2 (revealed normalized values):
+        - observation / 8.0 for revealed cells (0.0 .. 1.0)
+        - 0.0 for hidden cells
+        """
+        obs = observation.astype(np.float32)
+        hidden_mask = (obs == -1.0).astype(np.float32)
+        revealed_values = np.where(obs >= 0.0, obs / 8.0, 0.0).astype(np.float32)
+        return np.stack([hidden_mask, revealed_values], axis=0)
+
+    def _network_forward(self, network: nn.Module, state_batch: torch.Tensor) -> torch.Tensor:
+        """Forward pass helper for either MLP or CNN model type."""
+        if self.model_type == "mlp":
+            return network(state_batch.view(state_batch.shape[0], -1))
+        return network(state_batch)
 
     def _action_to_index(self, action: Action) -> int:
         row, col = action
@@ -113,10 +159,10 @@ class DQNAgent:
             return valid_actions[int(self.rng.integers(0, len(valid_actions)))]
 
         state = torch.tensor(
-            self._flatten_observation(observation), dtype=torch.float32, device=self.device
+            self._encode_observation(observation), dtype=torch.float32, device=self.device
         ).unsqueeze(0)
         with torch.no_grad():
-            q_values = self.policy_net(state).squeeze(0).cpu().numpy()
+            q_values = self._network_forward(self.policy_net, state).squeeze(0).cpu().numpy()
 
         # Mask out invalid actions so they are never selected greedily.
         valid_indices = [self._action_to_index(a) for a in valid_actions]
@@ -139,10 +185,10 @@ class DQNAgent:
         """Store one transition in replay memory."""
         self.memory.append(
             (
-                self._flatten_observation(observation).copy(),
+                self._encode_observation(observation).copy(),
                 action,
                 float(reward),
-                self._flatten_observation(next_observation).copy(),
+                self._encode_observation(next_observation).copy(),
                 bool(done),
             )
         )
@@ -167,11 +213,12 @@ class DQNAgent:
         )
         dones = torch.tensor([item[4] for item in batch], dtype=torch.float32, device=self.device)
 
-        q_pred = self.policy_net(states).gather(1, action_indices.unsqueeze(1)).squeeze(1)
+        q_pred = self._network_forward(self.policy_net, states).gather(1, action_indices.unsqueeze(1)).squeeze(1)
 
         with torch.no_grad():
-            next_q_all = self.target_net(next_states)
-            valid_next_mask = next_states == -1.0
+            next_q_all = self._network_forward(self.target_net, next_states)
+            # Valid next actions come from channel 1 (hidden mask).
+            valid_next_mask = next_states[:, 0, :, :].reshape(next_states.shape[0], -1) > 0.5
             masked_next_q = next_q_all.masked_fill(~valid_next_mask, -1e9)
             has_valid_actions = valid_next_mask.any(dim=1)
             next_max_q = torch.where(

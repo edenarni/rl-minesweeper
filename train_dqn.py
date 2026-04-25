@@ -36,6 +36,89 @@ class Metrics:
     average_steps: float
 
 
+def save_loss_graph(losses: list[float], output_path: str) -> str:
+    """Save loss graph to file.
+
+    Uses matplotlib when available, otherwise writes a simple SVG without extra
+    dependencies. Returns the actual output path used.
+    """
+    valid_losses = np.array(losses, dtype=np.float32)
+    episode_axis = np.arange(1, len(valid_losses) + 1)
+    valid_mask = ~np.isnan(valid_losses)
+
+    try:
+        import matplotlib.pyplot as plt  # Local import so script works without matplotlib installed.
+
+        plt.figure(figsize=(10, 4))
+        plt.plot(episode_axis[valid_mask], valid_losses[valid_mask], label="Episode avg loss", alpha=0.35)
+
+        if np.count_nonzero(valid_mask) >= 100:
+            clean_losses = valid_losses[valid_mask]
+            smooth = np.convolve(clean_losses, np.ones(100) / 100.0, mode="valid")
+            smooth_axis = episode_axis[valid_mask][99:]
+            plt.plot(smooth_axis, smooth, label="Moving avg loss (100)", linewidth=2.0)
+
+        plt.title("DQN Training Loss")
+        plt.xlabel("Episode")
+        plt.ylabel("Loss")
+        plt.grid(True, alpha=0.2)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=150)
+        plt.close()
+        return output_path
+    except ModuleNotFoundError:
+        # Fallback: create a basic SVG line chart so plotting never blocks training.
+        if output_path.lower().endswith(".png"):
+            output_path = output_path[:-4] + ".svg"
+        elif not output_path.lower().endswith(".svg"):
+            output_path = output_path + ".svg"
+
+        clean_x = episode_axis[valid_mask]
+        clean_y = valid_losses[valid_mask]
+        if len(clean_x) == 0:
+            clean_x = np.array([0, 1], dtype=np.float32)
+            clean_y = np.array([0.0, 0.0], dtype=np.float32)
+
+        width, height = 1000, 420
+        pad_left, pad_right, pad_top, pad_bottom = 70, 30, 30, 50
+        plot_w = width - pad_left - pad_right
+        plot_h = height - pad_top - pad_bottom
+
+        x_min, x_max = float(np.min(clean_x)), float(np.max(clean_x))
+        y_min, y_max = float(np.min(clean_y)), float(np.max(clean_y))
+        if x_max == x_min:
+            x_max = x_min + 1.0
+        if y_max == y_min:
+            y_max = y_min + 1.0
+
+        def to_px(x: float, y: float) -> tuple[float, float]:
+            x_norm = (x - x_min) / (x_max - x_min)
+            y_norm = (y - y_min) / (y_max - y_min)
+            px = pad_left + x_norm * plot_w
+            py = pad_top + (1.0 - y_norm) * plot_h
+            return px, py
+
+        points = [to_px(float(x), float(y)) for x, y in zip(clean_x, clean_y)]
+        polyline_points = " ".join(f"{x:.2f},{y:.2f}" for x, y in points)
+
+        svg = f"""<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">
+  <rect x="0" y="0" width="{width}" height="{height}" fill="white"/>
+  <text x="{pad_left}" y="20" font-family="Arial, sans-serif" font-size="18" fill="#111">DQN Training Loss</text>
+  <line x1="{pad_left}" y1="{pad_top + plot_h}" x2="{pad_left + plot_w}" y2="{pad_top + plot_h}" stroke="#333" stroke-width="1.5"/>
+  <line x1="{pad_left}" y1="{pad_top}" x2="{pad_left}" y2="{pad_top + plot_h}" stroke="#333" stroke-width="1.5"/>
+  <polyline fill="none" stroke="#0066cc" stroke-width="2" points="{polyline_points}"/>
+  <text x="{pad_left + plot_w / 2:.0f}" y="{height - 12}" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#333">Episode</text>
+  <text x="18" y="{pad_top + plot_h / 2:.0f}" transform="rotate(-90 18 {pad_top + plot_h / 2:.0f})" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" fill="#333">Loss</text>
+  <text x="{pad_left}" y="{height - 30}" font-family="Arial, sans-serif" font-size="12" fill="#555">x: {x_min:.0f} .. {x_max:.0f}</text>
+  <text x="{pad_left + 180}" y="{height - 30}" font-family="Arial, sans-serif" font-size="12" fill="#555">y: {y_min:.4f} .. {y_max:.4f}</text>
+</svg>
+"""
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(svg)
+        return output_path
+
+
 def evaluate_agent(
     env: MinesweeperEnv,
     agent: AgentProtocol,
@@ -117,6 +200,7 @@ def train_dqn(
     num_episodes: int = 5000,
     progress_every: int = 500,
     qlearning_baseline_episodes: int | None = None,
+    loss_plot_path: str = "dqn_loss_curve.png",
 ) -> None:
     """Train DQN on Minesweeper and compare to available baselines."""
     env = MinesweeperEnv(rows=5, cols=5, num_mines=3, seed=42)
@@ -138,6 +222,7 @@ def train_dqn(
     recent_steps: list[int] = []
     recent_wins: list[int] = []
     recent_losses: list[float] = []
+    avg_loss_per_episode: list[float] = []
 
     for episode in range(1, num_episodes + 1):
         observation = env.reset()
@@ -145,6 +230,7 @@ def train_dqn(
         episode_reward = 0.0
         episode_steps = 0
         won = False
+        episode_losses: list[float] = []
 
         while not done:
             action = dqn_agent.select_action(observation)
@@ -156,6 +242,7 @@ def train_dqn(
             episode_steps += 1
             if loss is not None:
                 recent_losses.append(loss)
+                episode_losses.append(loss)
 
             if done and info.get("result") == "win":
                 won = True
@@ -164,6 +251,7 @@ def train_dqn(
         recent_rewards.append(episode_reward)
         recent_steps.append(episode_steps)
         recent_wins.append(1 if won else 0)
+        avg_loss_per_episode.append(float(np.mean(episode_losses)) if episode_losses else float("nan"))
 
         if episode % progress_every == 0:
             window_reward = float(np.mean(recent_rewards[-progress_every:]))
@@ -221,6 +309,9 @@ def train_dqn(
         )
         print(f"  Average steps delta: {(dqn_metrics.average_steps - qlearning_metrics.average_steps):.3f}")
 
+    actual_plot_path = save_loss_graph(avg_loss_per_episode, loss_plot_path)
+    print(f"\nSaved loss graph to: {actual_plot_path}")
+
 
 def parse_args() -> argparse.Namespace:
     """Parse CLI arguments for training configuration."""
@@ -243,6 +334,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional episodes for QLearning baseline training. Default: same as --num-episodes.",
     )
+    parser.add_argument(
+        "--loss-plot-path",
+        type=str,
+        default="dqn_loss_curve.png",
+        help="Path for saving the training loss graph (default: dqn_loss_curve.png).",
+    )
     return parser.parse_args()
 
 
@@ -252,4 +349,5 @@ if __name__ == "__main__":
         num_episodes=args.num_episodes,
         progress_every=args.progress_every,
         qlearning_baseline_episodes=args.qlearning_baseline_episodes,
+        loss_plot_path=args.loss_plot_path,
     )
