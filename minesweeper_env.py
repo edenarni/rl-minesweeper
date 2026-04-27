@@ -8,7 +8,7 @@ This module intentionally keeps the API simple:
 from __future__ import annotations
 
 from collections import deque
-from typing import Dict, List, Tuple
+from typing import Dict, List, Literal, Tuple
 
 import numpy as np
 
@@ -17,7 +17,12 @@ class MinesweeperEnv:
     """A small Minesweeper environment with NumPy boards."""
 
     def __init__(
-        self, rows: int = 5, cols: int = 5, num_mines: int = 3, seed: int | None = None
+        self,
+        rows: int = 5,
+        cols: int = 5,
+        num_mines: int = 3,
+        seed: int | None = None,
+        reward_mode: Literal["classic", "progress"] = "classic",
     ) -> None:
         """Initialize environment configuration and random generator.
 
@@ -26,6 +31,8 @@ class MinesweeperEnv:
             cols: Number of board columns.
             num_mines: Number of mines to place on the hidden board.
             seed: Optional random seed for deterministic behavior.
+            reward_mode: "classic" keeps the original rewards; "progress" rewards
+                the number of newly revealed safe cells.
         """
         if rows <= 0 or cols <= 0:
             raise ValueError("rows and cols must be positive")
@@ -38,6 +45,9 @@ class MinesweeperEnv:
         self.cols = cols
         self.num_mines = num_mines
         self.seed = seed
+        if reward_mode not in {"classic", "progress"}:
+            raise ValueError("reward_mode must be 'classic' or 'progress'")
+        self.reward_mode = reward_mode
         self.rng = np.random.default_rng(seed)
 
         # Hidden board: -1 = mine, 0-8 = count of neighboring mines.
@@ -60,7 +70,7 @@ class MinesweeperEnv:
         self.last_mine_hit = None
         return self.visible_board.copy()
 
-    def step(self, action: Tuple[int, int]) -> Tuple[np.ndarray, float, bool, Dict[str, str]]:
+    def step(self, action: Tuple[int, int]) -> Tuple[np.ndarray, float, bool, Dict[str, str | int]]:
         """Apply one action (row, col) and return (observation, reward, done, info)."""
         if self.done:
             return (
@@ -99,16 +109,25 @@ class MinesweeperEnv:
                 {"result": "loss"},
             )
 
+        revealed_before = np.count_nonzero(self.visible_board != -1)
         self._reveal_cell(row, col)
         if self.hidden_board[row, col] == 0:
             self._reveal_empty_area(row, col)
+        revealed_after = np.count_nonzero(self.visible_board != -1)
+        newly_revealed = revealed_after - revealed_before
 
-        reward = 1.0
-        info: Dict[str, str] = {"result": "continue"}
+        if self.reward_mode == "progress":
+            reward = 0.5 * newly_revealed
+        else:
+            reward = 1.0
+        info: Dict[str, str | int] = {"result": "continue", "newly_revealed": int(newly_revealed)}
 
         if self._check_win():
             self.done = True
-            reward += 20.0  # +1 safe move and +20 win bonus = +21 total
+            if self.reward_mode == "progress":
+                reward += 25.0
+            else:
+                reward += 20.0  # +1 safe move and +20 win bonus = +21 total
             info["result"] = "win"
 
         return self.visible_board.copy(), reward, self.done, info
