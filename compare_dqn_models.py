@@ -32,6 +32,9 @@ class MethodConfig:
 
 
 def train_one_seed(
+    rows: int,
+    cols: int,
+    num_mines: int,
     model_type: Literal["mlp", "cnn", "cnn_deep"],
     replay_type: Literal["uniform", "prioritized"],
     reward_mode: Literal["classic", "progress"],
@@ -46,10 +49,10 @@ def train_one_seed(
     priority_epsilon: float,
 ) -> DQNAgent:
     """Train one DQN agent for a specific seed."""
-    env = MinesweeperEnv(rows=5, cols=5, num_mines=3, seed=seed, reward_mode=reward_mode)
+    env = MinesweeperEnv(rows=rows, cols=cols, num_mines=num_mines, seed=seed, reward_mode=reward_mode)
     agent = DQNAgent(
-        rows=5,
-        cols=5,
+        rows=rows,
+        cols=cols,
         lr=1e-3,
         gamma=0.99,
         epsilon=1.0,
@@ -103,12 +106,15 @@ def train_one_seed(
 
 def evaluate_one_seed(
     agent: DQNAgent,
+    rows: int,
+    cols: int,
+    num_mines: int,
     seed: int,
     eval_games: int,
     reward_mode: Literal["classic", "progress"],
 ) -> Metrics:
     """Evaluate one trained DQN agent with greedy policy (epsilon=0)."""
-    env = MinesweeperEnv(rows=5, cols=5, num_mines=3, seed=seed + 10_000, reward_mode=reward_mode)
+    env = MinesweeperEnv(rows=rows, cols=cols, num_mines=num_mines, seed=seed + 10_000, reward_mode=reward_mode)
     wins = 0
     total_reward = 0.0
     total_steps = 0
@@ -158,6 +164,9 @@ def summarize_std(metrics: list[Metrics]) -> Metrics:
 
 
 def run_multi_seed(
+    rows: int,
+    cols: int,
+    num_mines: int,
     model_type: Literal["mlp", "cnn", "cnn_deep"],
     replay_type: Literal["uniform", "prioritized"],
     reward_mode: Literal["classic", "progress"],
@@ -174,12 +183,18 @@ def run_multi_seed(
     save_model_path: Path | None = None,
 ) -> list[Metrics]:
     """Train+evaluate one model type across many seeds."""
-    print(f"\n=== {model_type.upper()} DQN ({replay_type}, reward={reward_mode}) | seeds={seeds} ===")
+    print(
+        f"\n=== {model_type.upper()} DQN ({replay_type}, reward={reward_mode}) "
+        f"| board={rows}x{cols}, mines={num_mines} | seeds={seeds} ==="
+    )
     per_seed_metrics: list[Metrics] = []
 
     for seed in seeds:
         print(f"\nTraining {model_type.upper()} seed={seed} | replay={replay_type}")
         agent = train_one_seed(
+            rows,
+            cols,
+            num_mines,
             model_type,
             replay_type,
             reward_mode,
@@ -193,7 +208,15 @@ def run_multi_seed(
             beta_end,
             priority_epsilon,
         )
-        metrics = evaluate_one_seed(agent, seed=seed, eval_games=eval_games, reward_mode=reward_mode)
+        metrics = evaluate_one_seed(
+            agent,
+            rows=rows,
+            cols=cols,
+            num_mines=num_mines,
+            seed=seed,
+            eval_games=eval_games,
+            reward_mode=reward_mode,
+        )
         per_seed_metrics.append(metrics)
         print(
             f"Evaluation seed={seed} | win_rate={metrics.win_rate:.2%} "
@@ -204,9 +227,9 @@ def run_multi_seed(
             agent.save_checkpoint(
                 save_model_path,
                 metadata={
-                    "rows": 5,
-                    "cols": 5,
-                    "num_mines": 3,
+                    "rows": rows,
+                    "cols": cols,
+                    "num_mines": num_mines,
                     "seed": seed,
                     "num_episodes": num_episodes,
                     "eval_games": eval_games,
@@ -239,6 +262,9 @@ def run_multi_seed(
 def parse_args() -> argparse.Namespace:
     """Parse CLI args for multi-seed comparison."""
     parser = argparse.ArgumentParser(description="Evaluate DQN variants over one or more seeds.")
+    parser.add_argument("--rows", type=int, default=5)
+    parser.add_argument("--cols", type=int, default=5)
+    parser.add_argument("--num-mines", type=int, default=3)
     parser.add_argument("--num-episodes", type=int, default=5000)
     parser.add_argument("--eval-games", type=int, default=1000)
     parser.add_argument("--progress-every", type=int, default=0)
@@ -303,6 +329,9 @@ def main() -> None:
             for reward_mode in args.reward_modes:
                 key = f"{model_type}:{replay_type}:{reward_mode}"
                 results_by_method[key] = run_multi_seed(
+                    rows=args.rows,
+                    cols=args.cols,
+                    num_mines=args.num_mines,
                     model_type=model_type,
                     replay_type=replay_type,
                     reward_mode=reward_mode,

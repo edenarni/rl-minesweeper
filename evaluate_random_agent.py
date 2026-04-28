@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
+import argparse
+from typing import Literal
+
 from agents.random_agent import RandomAgent
 from minesweeper_env import MinesweeperEnv
 
 
-def evaluate_random_agent(num_games: int = 1000) -> None:
+def evaluate_random_agent(
+    rows: int = 5,
+    cols: int = 5,
+    num_mines: int = 3,
+    num_games: int = 1000,
+    reward_mode: Literal["classic", "progress"] = "classic",
+) -> None:
     """Run many episodes and print baseline performance metrics."""
-    env = MinesweeperEnv(rows=5, cols=5, num_mines=3, seed=42)
+    env = MinesweeperEnv(rows=rows, cols=cols, num_mines=num_mines, seed=42, reward_mode=reward_mode)
     agent = RandomAgent(seed=123)
 
     wins = 0
@@ -39,11 +48,30 @@ def evaluate_random_agent(num_games: int = 1000) -> None:
     average_reward = total_reward / num_games
     average_steps = total_steps / num_games
 
+    print(f"Board: {rows}x{cols}, mines={num_mines}, reward={reward_mode}")
     print(f"Games played: {num_games}")
     print(f"Win rate: {win_rate:.2%}")
     print(f"Average reward: {average_reward:.3f}")
     print(f"Average steps: {average_steps:.3f}")
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse CLI arguments for baseline evaluation."""
+    parser = argparse.ArgumentParser(description="Evaluate RandomAgent on Minesweeper.")
+    parser.add_argument("--rows", type=int, default=5)
+    parser.add_argument("--cols", type=int, default=5)
+    parser.add_argument("--num-mines", type=int, default=3)
+    parser.add_argument("--num-games", type=int, default=1000)
+    parser.add_argument("--reward-mode", choices=["classic", "progress"], default="classic")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    evaluate_random_agent(num_games=1000)
+    args = parse_args()
+    evaluate_random_agent(
+        rows=args.rows,
+        cols=args.cols,
+        num_mines=args.num_mines,
+        num_games=args.num_games,
+        reward_mode=args.reward_mode,
+    )

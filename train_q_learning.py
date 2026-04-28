@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 import numpy as np
 
@@ -84,9 +85,16 @@ def evaluate_agent(env: MinesweeperEnv, agent: AgentProtocol, num_games: int) ->
     )
 
 
-def train_q_learning(num_episodes: int = 5000, progress_every: int = 500) -> None:
+def train_q_learning(
+    rows: int = 5,
+    cols: int = 5,
+    num_mines: int = 3,
+    num_episodes: int = 5000,
+    progress_every: int = 500,
+    reward_mode: Literal["classic", "progress"] = "classic",
+) -> None:
     """Train tabular Q-learning and compare against a random baseline."""
-    env = MinesweeperEnv(rows=5, cols=5, num_mines=3, seed=42)
+    env = MinesweeperEnv(rows=rows, cols=cols, num_mines=num_mines, seed=42, reward_mode=reward_mode)
     q_agent = QLearningAgent(
         alpha=0.1,
         gamma=0.99,
@@ -131,6 +139,7 @@ def train_q_learning(num_episodes: int = 5000, progress_every: int = 500) -> Non
     random_metrics = evaluate_agent(env, random_agent, num_games=eval_games)
 
     print("\n=== Final Evaluation (1000 games) ===")
+    print(f"Board: {rows}x{cols}, mines={num_mines}, reward={reward_mode}")
     print("Evaluation setting:")
     print("  QLearningAgent epsilon: 0.0 (greedy policy)")
 
@@ -150,5 +159,25 @@ def train_q_learning(num_episodes: int = 5000, progress_every: int = 500) -> Non
     print(f"  Average steps delta: {(q_metrics.average_steps - random_metrics.average_steps):.3f}")
 
 
+def parse_args() -> argparse.Namespace:
+    """Parse CLI arguments for Q-learning training."""
+    parser = argparse.ArgumentParser(description="Train tabular Q-learning on Minesweeper.")
+    parser.add_argument("--rows", type=int, default=5)
+    parser.add_argument("--cols", type=int, default=5)
+    parser.add_argument("--num-mines", type=int, default=3)
+    parser.add_argument("--num-episodes", type=int, default=5000)
+    parser.add_argument("--progress-every", type=int, default=500)
+    parser.add_argument("--reward-mode", choices=["classic", "progress"], default="classic")
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
-    train_q_learning(num_episodes=5000, progress_every=500)
+    args = parse_args()
+    train_q_learning(
+        rows=args.rows,
+        cols=args.cols,
+        num_mines=args.num_mines,
+        num_episodes=args.num_episodes,
+        progress_every=args.progress_every,
+        reward_mode=args.reward_mode,
+    )

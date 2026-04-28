@@ -40,8 +40,17 @@ class MinesweeperUI:
         self.dqn_seed = 55
         self.dqn_epsilon_min = 0.001
         self.dqn_epsilon_decay = 0.999
-        self.best_model_path = Path(__file__).resolve().parent / "models" / "best_cnn_deep_5x5_seed55.pt"
-        self.env = MinesweeperEnv(rows=self.rows, cols=self.cols, num_mines=self.num_mines, seed=42)
+        self.reward_mode = "classic"
+        self.best_model_path = (
+            Path(__file__).resolve().parent / "models" / "best_cnn_deep_5x5_seed55.pt"
+        )
+        self.env = MinesweeperEnv(
+            rows=self.rows,
+            cols=self.cols,
+            num_mines=self.num_mines,
+            seed=42,
+            reward_mode=self.reward_mode,
+        )
         self.observation = self.env.reset()
 
         self.agent: AgentProtocol = RandomAgent(seed=123)
@@ -57,7 +66,7 @@ class MinesweeperUI:
         top.pack(fill=tk.X)
 
         ttk.Label(top, text="Agent:").pack(side=tk.LEFT)
-        self.agent_var = tk.StringVar(value="Saved Best DQN")
+        self.agent_var = tk.StringVar(value="DQN-CNN-DEEP")
         self.agent_menu = ttk.Combobox(
             top,
             textvariable=self.agent_var,
@@ -90,9 +99,9 @@ class MinesweeperUI:
                 label = tk.Label(
                     board_frame,
                     text="?",
-                    width=4,
-                    height=2,
-                    font=("Helvetica", 14, "bold"),
+                    width=3,
+                    height=1,
+                    font=("Helvetica", 12, "bold"),
                     relief=tk.RIDGE,
                     bd=1,
                     bg="#d9d9d9",
@@ -253,6 +262,8 @@ class MinesweeperUI:
                 self._set_status(f"Training DQN-CNN-DEEP for {episodes} episodes...")
                 self.root.update()
                 self.agent = self._train_dqn_agent(episodes, model_type="cnn_deep")
+                if isinstance(self.agent, DQNAgent):
+                    self._save_current_dqn_checkpoint(self.agent, episodes)
                 self._append_log("DQN-CNN-DEEP training finished. Switched to greedy policy (epsilon=0).")
                 self._set_status(f"DQN-CNN-DEEP ready (trained {episodes} episodes, epsilon=0).")
             else:
@@ -292,7 +303,7 @@ class MinesweeperUI:
         return max(1, value)
 
     def _load_saved_best_dqn(self) -> DQNAgent:
-        """Load the current best saved 5x5 DQN checkpoint for instant UI playback."""
+        """Load the saved DQN checkpoint for the current board setup."""
         if not self.best_model_path.exists():
             raise FileNotFoundError(
                 f"Missing checkpoint: {self.best_model_path}. "
@@ -300,13 +311,39 @@ class MinesweeperUI:
             )
 
         agent = DQNAgent.load_checkpoint(self.best_model_path)
+        if agent.rows != self.rows or agent.cols != self.cols:
+            raise ValueError(
+                f"Checkpoint board is {agent.rows}x{agent.cols}, "
+                f"but UI board is {self.rows}x{self.cols}."
+            )
         agent.epsilon = 0.0
         self._append_log(f"Checkpoint path: {self.best_model_path}")
         self._append_log(
-            "Loaded setup: model_type=cnn_deep, replay=uniform, reward=classic, "
+            f"Loaded setup: model_type=cnn_deep, replay=uniform, reward={self.reward_mode}, "
+            f"board={self.rows}x{self.cols}, mines={self.num_mines}, "
             f"seed={self.dqn_seed}, epsilon=0 for UI playback"
         )
         return agent
+
+    def _save_current_dqn_checkpoint(self, agent: DQNAgent, episodes: int) -> None:
+        """Save the latest UI-trained deep CNN checkpoint for later playback."""
+        agent.save_checkpoint(
+            self.best_model_path,
+            metadata={
+                "rows": self.rows,
+                "cols": self.cols,
+                "num_mines": self.num_mines,
+                "seed": self.dqn_seed,
+                "num_episodes": episodes,
+                "model_type": agent.model_type,
+                "replay_type": agent.replay_type,
+                "reward_mode": self.reward_mode,
+                "epsilon_min": self.dqn_epsilon_min,
+                "epsilon_decay": self.dqn_epsilon_decay,
+                "source": "ui_minesweeper.py",
+            },
+        )
+        self._append_log(f"Saved DQN checkpoint to: {self.best_model_path}")
 
     def _train_qlearning_agent(self, episodes: int) -> QLearningAgent:
         agent = QLearningAgent(
@@ -317,7 +354,13 @@ class MinesweeperUI:
             epsilon_decay=0.999,
             seed=123,
         )
-        env = MinesweeperEnv(rows=self.rows, cols=self.cols, num_mines=self.num_mines, seed=123)
+        env = MinesweeperEnv(
+            rows=self.rows,
+            cols=self.cols,
+            num_mines=self.num_mines,
+            seed=123,
+            reward_mode=self.reward_mode,
+        )
         log_every = max(1, episodes // 20)
         recent_rewards: list[float] = []
         recent_wins: list[int] = []
@@ -375,7 +418,7 @@ class MinesweeperUI:
             cols=self.cols,
             num_mines=self.num_mines,
             seed=self.dqn_seed,
-            reward_mode="classic",
+            reward_mode=self.reward_mode,
         )
 
         model_labels = {
@@ -386,7 +429,8 @@ class MinesweeperUI:
         model_label = model_labels[model_type]
         self._append_log(
             "DQN setup: "
-            f"model_type={model_type}, replay=uniform, reward=classic, seed={self.dqn_seed}, "
+            f"board={self.rows}x{self.cols}, mines={self.num_mines}, "
+            f"model_type={model_type}, replay=uniform, reward={self.reward_mode}, seed={self.dqn_seed}, "
             f"epsilon_min={self.dqn_epsilon_min}, epsilon_decay={self.dqn_epsilon_decay}"
         )
         log_every = max(1, episodes // 20)

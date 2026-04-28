@@ -13,11 +13,14 @@ After each improvement, add one new entry with the exact training command and fi
 
 ## Current Default Workflow
 - Main model to improve: `CNN_DEEP DQN`
+- Current difficulty target: `8x8`, `10` mines
 - Main seed for fast iteration: `55`
 - Default focused evaluation command:
-  - `python3 compare_dqn_models.py --models cnn_deep --replay-modes uniform --reward-modes classic --seeds 55 --num-episodes 10000 --eval-games 1000 --progress-every 500 --epsilon-min 0.001 --epsilon-decay 0.999`
-- Best saved 5x5 checkpoint:
+  - `python3 compare_dqn_models.py --rows 8 --cols 8 --num-mines 10 --models cnn_deep --replay-modes uniform --reward-modes progress --seeds 55 --num-episodes 10000 --eval-games 1000 --progress-every 500 --epsilon-min 0.001 --epsilon-decay 0.999 --save-model-path models/best_cnn_deep_8x8_10m_progress_seed55.pt`
+- Previous best saved 5x5 checkpoint:
   - `models/best_cnn_deep_5x5_seed55.pt`
+- Current 8x8 checkpoint target:
+  - `models/best_cnn_deep_8x8_10m_progress_seed55.pt`
 - Multi-seed comparisons should only be repeated when a change looks promising enough to justify a broader validation pass.
 
 ## Metrics Legend
@@ -238,6 +241,89 @@ After each improvement, add one new entry with the exact training command and fi
 - Outcome:
   - The UI no longer needs to retrain the best model before playback.
   - Use `Saved Best DQN` in `python3 ui_minesweeper.py` to watch the saved model play.
+
+## Entry 011 - Move Target Difficulty to 10x10 With 15 Mines
+- Date: 2026-04-27
+- Change:
+  - Selected the next board difficulty:
+    - rows: `10`
+    - cols: `10`
+    - mines: `15`
+  - Added board-size arguments to experiment scripts so `5x5` is no longer hard-coded:
+    - `compare_dqn_models.py`
+    - `train_dqn.py`
+    - `train_q_learning.py`
+    - `evaluate_random_agent.py`
+  - Updated the UI board to `10x10`, `15` mines.
+  - Updated the UI saved-checkpoint target to:
+    - `models/best_cnn_deep_10x10_15m_seed55.pt`
+- Hypothesis:
+  - `10x10, 15 mines` is a meaningful next difficulty jump while keeping mine density reasonable at `15%`.
+  - The existing `CNN_DEEP` architecture can still run because it already supports variable rows/cols.
+- Training command for first 10x10 run:
+  - `python3 compare_dqn_models.py --rows 10 --cols 10 --num-mines 15 --models cnn_deep --replay-modes uniform --reward-modes classic --seeds 55 --num-episodes 10000 --eval-games 1000 --progress-every 500 --epsilon-min 0.001 --epsilon-decay 0.999 --save-model-path models/best_cnn_deep_10x10_15m_seed55.pt`
+- Baseline command:
+  - `python3 evaluate_random_agent.py --rows 10 --cols 10 --num-mines 15 --num-games 1000`
+- Result:
+  - Classic reward partial run through episode `7500` showed near-zero wins but improving average reward:
+    - Episode 500: win `0.00%`, reward `-6.232`
+    - Episode 3000: win `0.00%`, reward `-4.008`
+    - Episode 6000: win `0.60%`, reward `-2.734`
+    - Episode 7500: win `0.20%`, reward `-2.172`
+- Outcome:
+  - Project is ready to train and evaluate `10x10` DQN.
+  - The old `5x5` checkpoint should not be used on `10x10`, because output actions change from `25` cells to `100` cells.
+  - Classic reward appears too sparse/weak for the larger board, so the next controlled run should use progress reward.
+
+## Entry 012 - Use Progress Reward for 10x10 Target
+- Date: 2026-04-27
+- Change:
+  - Kept the `10x10`, `15` mines target.
+  - Switched the UI DQN training/playback environment to `reward_mode=progress`.
+  - Switched the UI checkpoint path to:
+    - `models/best_cnn_deep_10x10_15m_progress_seed55.pt`
+  - Added `--reward-mode` to baseline scripts so random/Q-learning comparisons can use the same reward mode.
+- Hypothesis:
+  - The classic reward gives too little learning signal on `10x10`.
+  - Progress reward should help by rewarding the number of newly revealed cells, especially flood-fill openings.
+- Training command:
+  - `python3 compare_dqn_models.py --rows 10 --cols 10 --num-mines 15 --models cnn_deep --replay-modes uniform --reward-modes progress --seeds 55 --num-episodes 10000 --eval-games 1000 --progress-every 500 --epsilon-min 0.001 --epsilon-decay 0.999 --save-model-path models/best_cnn_deep_10x10_15m_progress_seed55.pt`
+- Baseline command:
+  - `python3 evaluate_random_agent.py --rows 10 --cols 10 --num-mines 15 --num-games 1000 --reward-mode progress`
+- Result:
+  - Not run yet.
+- Outcome:
+  - This is the next recommended 10x10 experiment.
+  - Compare against classic mainly by win rate and average steps; average reward is not directly comparable because the reward scale changed.
+
+## Entry 013 - Step Back to 8x8 With 10 Mines
+- Date: 2026-04-27
+- Change:
+  - Moved the active target from `10x10`, `15` mines to:
+    - rows: `8`
+    - cols: `8`
+    - mines: `10`
+  - Kept the current promising setup:
+    - `CNN_DEEP DQN`
+    - uniform replay
+    - progress reward
+    - seed `55`
+    - `epsilon_min=0.001`
+    - `epsilon_decay=0.999`
+  - Updated the UI board/checkpoint path to:
+    - `models/best_cnn_deep_8x8_10m_progress_seed55.pt`
+- Hypothesis:
+  - `10x10`, `15` mines is a large jump from the successful `5x5` setup.
+  - `8x8`, `10` mines keeps a similar mine density (`15.6%`) but reduces the action space from `100` to `64`.
+  - This should be a more realistic next difficulty target before returning to `10x10`.
+- Training command:
+  - `python3 compare_dqn_models.py --rows 8 --cols 8 --num-mines 10 --models cnn_deep --replay-modes uniform --reward-modes progress --seeds 55 --num-episodes 10000 --eval-games 1000 --progress-every 500 --epsilon-min 0.001 --epsilon-decay 0.999 --save-model-path models/best_cnn_deep_8x8_10m_progress_seed55.pt`
+- Baseline command:
+  - `python3 evaluate_random_agent.py --rows 8 --cols 8 --num-mines 10 --num-games 1000 --reward-mode progress`
+- Result:
+  - Not run yet.
+- Outcome:
+  - This is the new recommended intermediate-difficulty experiment.
 
 ## Template For Next Entries
 Copy this block for each new improvement:

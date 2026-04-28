@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Literal, Protocol
 
 import numpy as np
 
@@ -197,25 +197,33 @@ def train_qlearning_baseline(env: MinesweeperEnv, num_episodes: int = 5000) -> M
 
 
 def train_dqn(
+    rows: int = 5,
+    cols: int = 5,
+    num_mines: int = 3,
     num_episodes: int = 5000,
     progress_every: int = 500,
     qlearning_baseline_episodes: int | None = None,
     loss_plot_path: str = "dqn_loss_curve.png",
+    model_type: Literal["mlp", "cnn", "cnn_deep"] = "mlp",
+    reward_mode: Literal["classic", "progress"] = "classic",
+    epsilon_min: float = 0.05,
+    epsilon_decay: float = 0.995,
 ) -> None:
     """Train DQN on Minesweeper and compare to available baselines."""
-    env = MinesweeperEnv(rows=5, cols=5, num_mines=3, seed=42)
+    env = MinesweeperEnv(rows=rows, cols=cols, num_mines=num_mines, seed=42, reward_mode=reward_mode)
     dqn_agent = DQNAgent(
-        rows=5,
-        cols=5,
+        rows=rows,
+        cols=cols,
         lr=1e-3,
         gamma=0.99,
         epsilon=1.0,
-        epsilon_min=0.05,
-        epsilon_decay=0.995,
+        epsilon_min=epsilon_min,
+        epsilon_decay=epsilon_decay,
         batch_size=64,
         memory_size=20000,
         target_update_every=200,
         seed=123,
+        model_type=model_type,
     )
 
     recent_rewards: list[float] = []
@@ -277,6 +285,7 @@ def train_dqn(
     qlearning_metrics = train_qlearning_baseline(env, num_episodes=baseline_episodes)
 
     print("\n=== Final Evaluation (1000 games) ===")
+    print(f"Board: {rows}x{cols}, mines={num_mines}, reward={reward_mode}, model={model_type}")
     print("Evaluation setting:")
     print("  DQNAgent epsilon: 0.0 (greedy policy)")
 
@@ -322,6 +331,13 @@ def parse_args() -> argparse.Namespace:
         default=5000,
         help="Number of DQN training episodes (default: 5000).",
     )
+    parser.add_argument("--rows", type=int, default=5)
+    parser.add_argument("--cols", type=int, default=5)
+    parser.add_argument("--num-mines", type=int, default=3)
+    parser.add_argument("--model-type", choices=["mlp", "cnn", "cnn_deep"], default="mlp")
+    parser.add_argument("--reward-mode", choices=["classic", "progress"], default="classic")
+    parser.add_argument("--epsilon-min", type=float, default=0.05)
+    parser.add_argument("--epsilon-decay", type=float, default=0.995)
     parser.add_argument(
         "--progress-every",
         type=int,
@@ -346,8 +362,15 @@ def parse_args() -> argparse.Namespace:
 if __name__ == "__main__":
     args = parse_args()
     train_dqn(
+        rows=args.rows,
+        cols=args.cols,
+        num_mines=args.num_mines,
         num_episodes=args.num_episodes,
         progress_every=args.progress_every,
         qlearning_baseline_episodes=args.qlearning_baseline_episodes,
         loss_plot_path=args.loss_plot_path,
+        model_type=args.model_type,
+        reward_mode=args.reward_mode,
+        epsilon_min=args.epsilon_min,
+        epsilon_decay=args.epsilon_decay,
     )
