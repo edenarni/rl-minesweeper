@@ -12,6 +12,8 @@ from typing import Dict, List, Literal, Tuple
 
 import numpy as np
 
+RewardMode = Literal["classic", "progress", "frontier"]
+
 
 class MinesweeperEnv:
     """A small Minesweeper environment with NumPy boards."""
@@ -22,7 +24,8 @@ class MinesweeperEnv:
         cols: int = 5,
         num_mines: int = 3,
         seed: int | None = None,
-        reward_mode: Literal["classic", "progress"] = "classic",
+        reward_mode: RewardMode = "classic",
+        frontier_bonus: float = 0.5,
     ) -> None:
         """Initialize environment configuration and random generator.
 
@@ -32,7 +35,11 @@ class MinesweeperEnv:
             num_mines: Number of mines to place on the hidden board.
             seed: Optional random seed for deterministic behavior.
             reward_mode: "classic" keeps the original rewards; "progress" rewards
-                the number of newly revealed safe cells.
+                the number of newly revealed safe cells; "frontier" keeps classic
+                rewards and adds a small bonus for safe moves next to revealed
+                numbered cells.
+            frontier_bonus: Extra reward for safe frontier moves when using
+                reward_mode="frontier".
         """
         if rows <= 0 or cols <= 0:
             raise ValueError("rows and cols must be positive")
@@ -45,9 +52,10 @@ class MinesweeperEnv:
         self.cols = cols
         self.num_mines = num_mines
         self.seed = seed
-        if reward_mode not in {"classic", "progress"}:
-            raise ValueError("reward_mode must be 'classic' or 'progress'")
+        if reward_mode not in {"classic", "progress", "frontier"}:
+            raise ValueError("reward_mode must be 'classic', 'progress', or 'frontier'")
         self.reward_mode = reward_mode
+        self.frontier_bonus = frontier_bonus
         self.rng = np.random.default_rng(seed)
 
         # Hidden board: -1 = mine, 0-8 = count of neighboring mines.
@@ -109,6 +117,7 @@ class MinesweeperEnv:
                 {"result": "loss"},
             )
 
+        was_frontier_action = self._is_frontier_action(row, col)
         revealed_before = np.count_nonzero(self.visible_board != -1)
         self._reveal_cell(row, col)
         if self.hidden_board[row, col] == 0:
@@ -120,7 +129,11 @@ class MinesweeperEnv:
             reward = 0.5 * newly_revealed
         else:
             reward = 1.0
+            if self.reward_mode == "frontier" and was_frontier_action:
+                reward += self.frontier_bonus
         info: Dict[str, str | int] = {"result": "continue", "newly_revealed": int(newly_revealed)}
+        if self.reward_mode == "frontier":
+            info["frontier_action"] = int(was_frontier_action)
 
         if self._check_win():
             self.done = True
@@ -162,6 +175,19 @@ class MinesweeperEnv:
                 if 0 <= nr < self.rows and 0 <= nc < self.cols:
                     neighbors.append((nr, nc))
         return neighbors
+
+    def _is_frontier_action(self, row: int, col: int) -> bool:
+        """Return True if a hidden cell touches at least one revealed number.
+
+        This is calculated before revealing the selected cell. It rewards moves
+        near existing information, but only after the move is known to be safe.
+        """
+        if self.visible_board[row, col] != -1:
+            return False
+        for nr, nc in self._get_neighbors(row, col):
+            if self.visible_board[nr, nc] > 0:
+                return True
+        return False
 
     def _reveal_cell(self, row: int, col: int) -> None:
         """Reveal a single cell on the visible board."""

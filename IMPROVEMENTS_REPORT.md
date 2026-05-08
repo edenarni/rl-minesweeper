@@ -325,6 +325,245 @@ After each improvement, add one new entry with the exact training command and fi
 - Outcome:
   - This is the new recommended intermediate-difficulty experiment.
 
+## Entry 014 - Curriculum Scaling + Optional Frontier Channel
+- Date: 2026-04-28
+- Change:
+  - Added `compare_curriculum_dqn.py`.
+  - Added curriculum training support:
+    - train first on `5x5`
+    - transfer CNN weights to `8x8`
+    - transfer CNN weights to `10x10`
+  - Replay memory is reset between stages because stored states have board-specific shapes.
+  - Added per-stage configuration for:
+    - board rows/cols
+    - mine count
+    - episodes
+    - `epsilon_min`
+    - `epsilon_decay`
+    - replay `memory_size`
+  - Added optional frontier input channel:
+    - `1.0` for hidden cells adjacent to at least one revealed numbered cell
+    - `0.0` otherwise
+  - Kept the CNN layer pattern unchanged. The only network input change is optional `2` channels vs `3` channels.
+- Hypothesis:
+  - Direct `10x10` training is too large a jump from `5x5`.
+  - Curriculum should transfer useful local Minesweeper patterns before training on the larger board.
+  - The frontier channel may help larger boards by explicitly highlighting candidate cells near known information.
+- Full comparison command:
+  - `python3 compare_curriculum_dqn.py --modes direct curriculum curriculum_frontier --seeds 55 --eval-games 1000 --progress-every 500 --reward-mode classic`
+- Smoke-test command:
+  - `python3 compare_curriculum_dqn.py --stages 5x5x3:5:0.001:0.999:2000 8x8x10:5:0.05:0.9995:3000 10x10x15:5:0.10:0.9997:4000 --modes direct curriculum curriculum_frontier --seeds 55 --eval-games 5 --progress-every 0 --reward-mode classic`
+- Smoke-test result:
+  - Direct `10x10`: win `0.00%`, reward `-5.200`, steps `5.800`
+  - Curriculum: win `0.00%`, reward `-5.200`, steps `5.800`
+  - Curriculum + frontier: win `0.00%`, reward `-8.200`, steps `2.800`
+- Reduced controlled comparison command:
+  - `python3 compare_curriculum_dqn.py --stages 5x5x3:100:0.001:0.999:5000 8x8x10:100:0.05:0.9995:10000 10x10x15:100:0.10:0.9997:20000 --modes direct curriculum curriculum_frontier --seeds 55 --eval-games 100 --progress-every 100 --reward-mode classic`
+- Reduced controlled comparison result:
+  - Direct `10x10`: win `0.00%`, reward `-5.330`, steps `5.670`
+  - Curriculum: win `0.00%`, reward `-5.910`, steps `5.090`
+  - Curriculum + frontier: win `0.00%`, reward `-6.010`, steps `4.990`
+- Outcome:
+  - Smoke test only verifies that all three modes run end-to-end.
+  - The reduced controlled comparison is still too short to evaluate final 10x10 learning quality.
+  - At this small budget, direct `10x10` had the best average reward, while curriculum variants took slightly fewer steps before terminal states.
+  - A real comparison still needs the full command above or a longer reduced run.
+
+## Entry 015 - Initialize 8x8 Curriculum From Saved Best 5x5 Checkpoint
+- Date: 2026-04-28
+- Change:
+  - Added `--initial-checkpoint` to `compare_curriculum_dqn.py`.
+  - Used the saved mature 5x5 model:
+    - `models/best_cnn_deep_5x5_seed55.pt`
+  - Transferred CNN weights into a new 8x8 agent, with a fresh replay buffer.
+  - For frontier-channel runs, compatible CNN weights are copied and the extra frontier input channel keeps its random initialization.
+- Hypothesis:
+  - The previous curriculum run was undertrained because the 5x5 stage only reached about `21.60%` win rate.
+  - Starting from the mature saved 5x5 model should give a more meaningful transfer test to 8x8.
+- Command:
+  - `python3 compare_curriculum_dqn.py --stages 8x8x10:1000:0.05:0.9995:50000 --modes direct curriculum curriculum_frontier --initial-checkpoint models/best_cnn_deep_5x5_seed55.pt --seeds 55 --eval-games 500 --progress-every 250 --reward-mode classic`
+- Result:
+  - Direct 8x8: win `0.20%`, reward `-5.064`, steps `5.874`
+  - 5x5 checkpoint -> 8x8 curriculum: win `2.60%`, reward `-4.442`, steps `5.752`
+  - 5x5 checkpoint -> 8x8 curriculum + frontier: win `2.40%`, reward `-3.978`, steps `6.278`
+- Outcome:
+  - This is the first evidence that transfer from the mature 5x5 checkpoint helps on 8x8.
+  - Curriculum improved win rate by `+2.40` percentage points over direct 8x8 in this focused seed-55 run.
+  - Frontier did not improve win rate over normal checkpoint curriculum, but it had the best average reward and longest survival.
+  - This should be validated with longer 8x8 training and/or multiple seeds before treating it as robust.
+
+## Entry 016 - Continued 8x8 Curriculum Checkpoint Training
+- Date: 2026-04-29
+- Change:
+  - Continued training the `8x8`, `10` mines curriculum model across multiple saved checkpoints.
+  - Saved checkpoints currently visible in `models/` include:
+    - `models/best_cnn_deep_8x8_10m_curriculum_seed55.pt`
+    - `models/best_cnn_deep_8x8_20m_curriculum_seed55.pt`
+    - `models/best_cnn_deep_8x8_35m_curriculum_seed55.pt`
+    - `models/best_cnn_deep_8x8_50m_curriculum_seed55.pt`
+    - `models/best_cnn_deep_8x8_65m_curriculum_seed55.pt`
+  - For resumed training, epsilon was raised again instead of continuing from the low checkpoint epsilon.
+  - Learning rate was reduced to `0.0005` for fine-tuning.
+- Hypothesis:
+  - Resuming from a trained checkpoint with epsilon stuck near the minimum can limit exploration.
+  - Raising epsilon again during continued training should help the model discover better actions on `8x8`.
+  - Lower learning rate should reduce the risk of damaging useful weights while still allowing improvement.
+- Example command:
+  - `python3 compare_curriculum_dqn.py --resume-checkpoint models/best_cnn_deep_8x8_50m_curriculum_seed55.pt --resume-epsilon-start 0.4 --resume-learning-rate 0.0005 --resume-episodes 15000 --eval-games 1000 --progress-every 500 --save-model-path models/best_cnn_deep_8x8_65m_curriculum_seed55.pt`
+- Result:
+  - Loaded checkpoint: `models/best_cnn_deep_8x8_50m_curriculum_seed55.pt`
+  - Continued for `15000` episodes
+  - Reset training epsilon to `0.400`
+  - Learning rate: `0.0005`
+  - Saved checkpoint: `models/best_cnn_deep_8x8_65m_curriculum_seed55.pt`
+  - Evaluation: win `36.70%`, reward `12.450`, steps `12.073`
+- Outcome:
+  - Continued 8x8 training is now producing meaningful win rates.
+  - The agent survives much longer than early 8x8 runs, with average steps around `12`.
+  - Next concern from UI inspection: the agent does not strongly prefer frontier cells near revealed information.
+
+## Entry 017 - Frontier Reward Bonus
+- Date: 2026-04-29
+- Change:
+  - Added a controlled reward-shaping experiment.
+  - Added `reward_mode="frontier"` that keeps current classic penalties unchanged:
+    - invalid action outside board: `-5`
+    - already revealed cell: `-2`
+    - clicked mine / loss: `-10`
+  - Keep base classic safe/win rewards:
+    - safe move: `+1`
+    - win step: `+21` total before any frontier bonus
+  - Added a configurable bonus when the selected safe cell is a frontier cell.
+  - Frontier action definition:
+    - the selected cell is hidden before the move
+    - it is adjacent to at least one revealed numbered cell
+  - First bonus to test: `frontier_bonus=0.5`.
+- Hypothesis:
+  - The current classic reward gives the same `+1` for all safe cells.
+  - It does not directly encourage choosing hidden cells near revealed information.
+  - A small frontier bonus may teach the agent to prefer information-rich local moves without making frontier chasing dominate the win objective.
+- Implementation:
+  - Added `reward_mode="frontier"` to `MinesweeperEnv`.
+  - Added `frontier_bonus` as a configurable environment parameter.
+  - Before revealing a safe cell, the environment checks whether the clicked cell is adjacent to at least one revealed numbered cell.
+  - If safe and frontier, the environment adds `frontier_bonus` to the safe reward.
+  - Added CLI support for frontier reward in the training/evaluation scripts.
+- Planned comparison:
+  - Compare classic vs frontier reward on `8x8`, `10` mines.
+  - Start from the same current checkpoint if doing continued training.
+  - Use the same seed, same resume epsilon, same learning rate, same episode count, and same eval games.
+- Result:
+  - Not run yet.
+- Outcome:
+  - Implementation is ready.
+  - Training/evaluation result is not run yet.
+
+## Entry 018 - Frontier Reward Fine-Tuning With Small Bonus and Small Learning Rate
+- Date: 2026-04-30
+- Change:
+  - Continued from the best available `8x8`, `10` mines classic curriculum checkpoint.
+  - Switched resumed training to `reward_mode=frontier`.
+  - Used a smaller frontier bonus than initially planned:
+    - `frontier_bonus=0.2`
+  - Used a much smaller fine-tuning learning rate:
+    - `resume_learning_rate=0.00005`
+  - Raised epsilon again for continued exploration:
+    - `resume_epsilon_start=0.4`
+- Hypothesis:
+  - The frontier reward should encourage moves near revealed numbered cells.
+  - A smaller frontier bonus may be safer than `0.5` because it nudges behavior without overpowering the original win/loss objective.
+  - A smaller learning rate may be better for fine-tuning because the checkpoint already has useful behavior.
+- Parameters:
+  - Board: `8x8`
+  - Mines: `10`
+  - Model: `CNN_DEEP DQN`
+  - Replay: `uniform`
+  - Starting checkpoint: `models/best_cnn_deep_8x8_65m_curriculum_seed55.pt`
+  - Reward mode: `frontier`
+  - Frontier bonus: `0.2`
+  - Resume epsilon start: `0.4`
+  - Resume learning rate: `0.00005`
+  - Resume episodes: `15000`
+  - Eval games: `1000`
+  - Progress every: `500`
+  - Seed: `55`
+  - Saved checkpoint: `models/best_cnn_deep_8x8_80m_frontier_0.2_seed55.pt`
+- Command:
+  - `python3 compare_curriculum_dqn.py --resume-checkpoint models/best_cnn_deep_8x8_65m_curriculum_seed55.pt --resume-reward-mode frontier --frontier-bonus 0.2 --resume-epsilon-start 0.4 --resume-learning-rate 0.00005 --resume-episodes 15000 --eval-games 1000 --progress-every 500 --save-model-path models/best_cnn_deep_8x8_80m_frontier_0.2_seed55.pt`
+- Progress snapshots:
+  - Episode `500`: epsilon `0.312`, win `2.40%`, reward `-2.856`
+  - Episode `3000`: epsilon `0.089`, win `15.80%`, reward `4.581`
+  - Episode `6000`: epsilon `0.050`, win `27.40%`, reward `10.984`
+  - Episode `8000`: epsilon `0.050`, win `31.20%`, reward `12.860`
+  - Episode `12000`: epsilon `0.050`, win `32.20%`, reward `13.598`
+  - Episode `15000`: epsilon `0.050`, win `30.60%`, reward `12.606`
+- Final Result:
+  - DQNAgent: win `47.60%`, reward `19.352`, steps `13.407`
+- Delta vs previous documented `8x8_65m` checkpoint:
+  - Previous: win `36.70%`, reward `12.450`, steps `12.073`
+  - New: win `47.60%`, reward `19.352`, steps `13.407`
+  - Win-rate delta: `+10.90` percentage points
+  - Average-step delta: `+1.334`
+- Outcome:
+  - This is the best documented `8x8`, `10` mines result so far.
+  - Frontier reward helped substantially in this focused seed-55 run.
+  - A smaller frontier bonus and smaller learning rate may be better for fine-tuning than the initially planned `frontier_bonus=0.5` and `learning_rate=0.0005`.
+  - From now on, report entries should include the exact parameters and full rerunnable command.
+
+## Entry 019 - Frontier Reward Fine-Tuning With `frontier_bonus=0.5`
+- Date: 2026-04-30
+- Change:
+  - Repeated the frontier fine-tuning experiment from the same starting checkpoint as Entry 018.
+  - Kept the smaller fine-tuning learning rate:
+    - `resume_learning_rate=0.00005`
+  - Changed only the frontier bonus:
+    - Entry 018 used `frontier_bonus=0.2`
+    - This run used `frontier_bonus=0.5`
+- Hypothesis:
+  - A larger frontier bonus may encourage the agent more strongly to click cells near revealed information.
+  - Keeping the same checkpoint, learning rate, epsilon reset, episode count, and eval games makes this a controlled comparison against Entry 018.
+- Parameters:
+  - Board: `8x8`
+  - Mines: `10`
+  - Model: `CNN_DEEP DQN`
+  - Replay: `uniform`
+  - Starting checkpoint: `models/best_cnn_deep_8x8_65m_curriculum_seed55.pt`
+  - Reward mode: `frontier`
+  - Frontier bonus: `0.5`
+  - Resume epsilon start: `0.4`
+  - Resume learning rate: `0.00005`
+  - Resume episodes: `15000`
+  - Eval games: `1000`
+  - Progress every: `500`
+  - Seed: `55`
+  - Saved checkpoint: `models/best_cnn_deep_8x8_80m_frontier_0.5_seed55.pt`
+- Command:
+  - `python3 compare_curriculum_dqn.py --resume-checkpoint models/best_cnn_deep_8x8_65m_curriculum_seed55.pt --resume-reward-mode frontier --frontier-bonus 0.5 --resume-epsilon-start 0.4 --resume-learning-rate 0.00005 --resume-episodes 15000 --eval-games 1000 --progress-every 500 --save-model-path models/best_cnn_deep_8x8_80m_frontier_0.5_seed55.pt`
+- Progress snapshots:
+  - Episode `500`: epsilon `0.312`, win `2.00%`, reward `-2.053`
+  - Episode `3000`: epsilon `0.089`, win `13.00%`, reward `6.016`
+  - Episode `4000`: epsilon `0.054`, win `25.80%`, reward `12.797`
+  - Episode `7500`: epsilon `0.050`, win `33.60%`, reward `17.162`
+  - Episode `10000`: epsilon `0.050`, win `33.60%`, reward `17.932`
+  - Episode `14000`: epsilon `0.050`, win `33.60%`, reward `17.186`
+  - Episode `15000`: epsilon `0.050`, win `32.40%`, reward `16.166`
+- Final Result:
+  - DQNAgent: win `49.10%`, reward `23.974`, steps `13.967`
+- Delta vs Entry 018 (`frontier_bonus=0.2`):
+  - Entry 018: win `47.60%`, reward `19.352`, steps `13.407`
+  - Entry 019: win `49.10%`, reward `23.974`, steps `13.967`
+  - Win-rate delta: `+1.50` percentage points
+  - Average-step delta: `+0.560`
+- Delta vs previous documented `8x8_65m` checkpoint:
+  - Previous: win `36.70%`, reward `12.450`, steps `12.073`
+  - New: win `49.10%`, reward `23.974`, steps `13.967`
+  - Win-rate delta: `+12.40` percentage points
+  - Average-step delta: `+1.894`
+- Outcome:
+  - This is the best documented `8x8`, `10` mines result so far.
+  - With the smaller learning rate fixed at `0.00005`, `frontier_bonus=0.5` slightly beat `frontier_bonus=0.2` on win rate and average steps.
+  - Average reward is higher partly because the reward scale is larger with a bigger frontier bonus, so win rate and average steps are more reliable comparison metrics.
+
 ## Template For Next Entries
 Copy this block for each new improvement:
 
@@ -333,6 +572,7 @@ Copy this block for each new improvement:
 - Date: YYYY-MM-DD
 - Change:
 - Hypothesis:
+- Parameters:
 - Command:
 - Progress snapshots:
 - Final Result:

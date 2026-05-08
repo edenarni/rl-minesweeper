@@ -11,7 +11,7 @@ from typing import Literal
 import numpy as np
 
 from agents.dqn_agent import DQNAgent
-from minesweeper_env import MinesweeperEnv
+from minesweeper_env import MinesweeperEnv, RewardMode
 
 
 @dataclass
@@ -37,19 +37,29 @@ def train_one_seed(
     num_mines: int,
     model_type: Literal["mlp", "cnn", "cnn_deep"],
     replay_type: Literal["uniform", "prioritized"],
-    reward_mode: Literal["classic", "progress"],
+    reward_mode: RewardMode,
+    frontier_bonus: float,
     seed: int,
     num_episodes: int,
     progress_every: int,
     epsilon_min: float,
     epsilon_decay: float,
+    memory_size: int,
     alpha: float,
     beta_start: float,
     beta_end: float,
     priority_epsilon: float,
+    use_frontier_channel: bool,
 ) -> DQNAgent:
     """Train one DQN agent for a specific seed."""
-    env = MinesweeperEnv(rows=rows, cols=cols, num_mines=num_mines, seed=seed, reward_mode=reward_mode)
+    env = MinesweeperEnv(
+        rows=rows,
+        cols=cols,
+        num_mines=num_mines,
+        seed=seed,
+        reward_mode=reward_mode,
+        frontier_bonus=frontier_bonus,
+    )
     agent = DQNAgent(
         rows=rows,
         cols=cols,
@@ -59,7 +69,7 @@ def train_one_seed(
         epsilon_min=epsilon_min,
         epsilon_decay=epsilon_decay,
         batch_size=64,
-        memory_size=20000,
+        memory_size=memory_size,
         target_update_every=200,
         seed=seed,
         model_type=model_type,
@@ -68,6 +78,7 @@ def train_one_seed(
         beta_start=beta_start,
         beta_end=beta_end,
         priority_epsilon=priority_epsilon,
+        use_frontier_channel=use_frontier_channel,
     )
 
     recent_rewards: list[float] = []
@@ -111,10 +122,18 @@ def evaluate_one_seed(
     num_mines: int,
     seed: int,
     eval_games: int,
-    reward_mode: Literal["classic", "progress"],
+    reward_mode: RewardMode,
+    frontier_bonus: float,
 ) -> Metrics:
     """Evaluate one trained DQN agent with greedy policy (epsilon=0)."""
-    env = MinesweeperEnv(rows=rows, cols=cols, num_mines=num_mines, seed=seed + 10_000, reward_mode=reward_mode)
+    env = MinesweeperEnv(
+        rows=rows,
+        cols=cols,
+        num_mines=num_mines,
+        seed=seed + 10_000,
+        reward_mode=reward_mode,
+        frontier_bonus=frontier_bonus,
+    )
     wins = 0
     total_reward = 0.0
     total_steps = 0
@@ -169,17 +188,20 @@ def run_multi_seed(
     num_mines: int,
     model_type: Literal["mlp", "cnn", "cnn_deep"],
     replay_type: Literal["uniform", "prioritized"],
-    reward_mode: Literal["classic", "progress"],
+    reward_mode: RewardMode,
     seeds: list[int],
     num_episodes: int,
     eval_games: int,
     progress_every: int,
     epsilon_min: float,
     epsilon_decay: float,
+    memory_size: int,
     alpha: float,
     beta_start: float,
     beta_end: float,
     priority_epsilon: float,
+    use_frontier_channel: bool,
+    frontier_bonus: float,
     save_model_path: Path | None = None,
 ) -> list[Metrics]:
     """Train+evaluate one model type across many seeds."""
@@ -198,15 +220,18 @@ def run_multi_seed(
             model_type,
             replay_type,
             reward_mode,
+            frontier_bonus,
             seed,
             num_episodes,
             progress_every,
             epsilon_min,
             epsilon_decay,
+            memory_size,
             alpha,
             beta_start,
             beta_end,
             priority_epsilon,
+            use_frontier_channel,
         )
         metrics = evaluate_one_seed(
             agent,
@@ -216,6 +241,7 @@ def run_multi_seed(
             seed=seed,
             eval_games=eval_games,
             reward_mode=reward_mode,
+            frontier_bonus=frontier_bonus,
         )
         per_seed_metrics.append(metrics)
         print(
@@ -236,8 +262,11 @@ def run_multi_seed(
                     "model_type": model_type,
                     "replay_type": replay_type,
                     "reward_mode": reward_mode,
+                    "frontier_bonus": frontier_bonus,
                     "epsilon_min": epsilon_min,
                     "epsilon_decay": epsilon_decay,
+                    "memory_size": memory_size,
+                    "use_frontier_channel": use_frontier_channel,
                     "win_rate": metrics.win_rate,
                     "average_reward": metrics.average_reward,
                     "average_steps": metrics.average_steps,
@@ -270,10 +299,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--progress-every", type=int, default=0)
     parser.add_argument("--epsilon-min", type=float, default=0.05)
     parser.add_argument("--epsilon-decay", type=float, default=0.995)
+    parser.add_argument("--memory-size", type=int, default=20000)
     parser.add_argument("--alpha", type=float, default=0.6)
     parser.add_argument("--beta-start", type=float, default=0.4)
     parser.add_argument("--beta-end", type=float, default=1.0)
     parser.add_argument("--priority-epsilon", type=float, default=1e-5)
+    parser.add_argument("--frontier-bonus", type=float, default=0.5)
     parser.add_argument(
         "--save-model-path",
         type=Path,
@@ -297,7 +328,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--reward-modes",
         nargs="+",
-        choices=["classic", "progress"],
+        choices=["classic", "progress", "frontier"],
         default=["classic"],
         help="Reward modes to evaluate (default: classic).",
     )
@@ -307,6 +338,11 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         default=[55],
         help="List of seeds to evaluate (default: 55).",
+    )
+    parser.add_argument(
+        "--frontier-channel",
+        action="store_true",
+        help="Add a third input channel marking hidden cells adjacent to revealed numbered cells.",
     )
     return parser.parse_args()
 
@@ -341,10 +377,13 @@ def main() -> None:
                     progress_every=args.progress_every,
                     epsilon_min=args.epsilon_min,
                     epsilon_decay=args.epsilon_decay,
+                    memory_size=args.memory_size,
                     alpha=args.alpha,
                     beta_start=args.beta_start,
                     beta_end=args.beta_end,
                     priority_epsilon=args.priority_epsilon,
+                    use_frontier_channel=args.frontier_channel,
+                    frontier_bonus=args.frontier_bonus,
                     save_model_path=args.save_model_path,
                 )
 

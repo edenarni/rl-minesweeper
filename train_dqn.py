@@ -10,7 +10,7 @@ import numpy as np
 
 from agents.dqn_agent import DQNAgent
 from agents.random_agent import RandomAgent
-from minesweeper_env import MinesweeperEnv
+from minesweeper_env import MinesweeperEnv, RewardMode
 
 try:
     from agents.q_learning_agent import QLearningAgent
@@ -205,12 +205,22 @@ def train_dqn(
     qlearning_baseline_episodes: int | None = None,
     loss_plot_path: str = "dqn_loss_curve.png",
     model_type: Literal["mlp", "cnn", "cnn_deep"] = "mlp",
-    reward_mode: Literal["classic", "progress"] = "classic",
+    reward_mode: RewardMode = "classic",
+    frontier_bonus: float = 0.5,
     epsilon_min: float = 0.05,
     epsilon_decay: float = 0.995,
+    memory_size: int = 20000,
+    use_frontier_channel: bool = False,
 ) -> None:
     """Train DQN on Minesweeper and compare to available baselines."""
-    env = MinesweeperEnv(rows=rows, cols=cols, num_mines=num_mines, seed=42, reward_mode=reward_mode)
+    env = MinesweeperEnv(
+        rows=rows,
+        cols=cols,
+        num_mines=num_mines,
+        seed=42,
+        reward_mode=reward_mode,
+        frontier_bonus=frontier_bonus,
+    )
     dqn_agent = DQNAgent(
         rows=rows,
         cols=cols,
@@ -220,10 +230,11 @@ def train_dqn(
         epsilon_min=epsilon_min,
         epsilon_decay=epsilon_decay,
         batch_size=64,
-        memory_size=20000,
+        memory_size=memory_size,
         target_update_every=200,
         seed=123,
         model_type=model_type,
+        use_frontier_channel=use_frontier_channel,
     )
 
     recent_rewards: list[float] = []
@@ -285,7 +296,11 @@ def train_dqn(
     qlearning_metrics = train_qlearning_baseline(env, num_episodes=baseline_episodes)
 
     print("\n=== Final Evaluation (1000 games) ===")
-    print(f"Board: {rows}x{cols}, mines={num_mines}, reward={reward_mode}, model={model_type}")
+    print(
+        f"Board: {rows}x{cols}, mines={num_mines}, reward={reward_mode}, "
+        f"frontier_bonus={frontier_bonus}, model={model_type}, "
+        f"frontier={use_frontier_channel}, memory_size={memory_size}"
+    )
     print("Evaluation setting:")
     print("  DQNAgent epsilon: 0.0 (greedy policy)")
 
@@ -335,9 +350,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cols", type=int, default=5)
     parser.add_argument("--num-mines", type=int, default=3)
     parser.add_argument("--model-type", choices=["mlp", "cnn", "cnn_deep"], default="mlp")
-    parser.add_argument("--reward-mode", choices=["classic", "progress"], default="classic")
+    parser.add_argument("--reward-mode", choices=["classic", "progress", "frontier"], default="classic")
+    parser.add_argument("--frontier-bonus", type=float, default=0.5)
     parser.add_argument("--epsilon-min", type=float, default=0.05)
     parser.add_argument("--epsilon-decay", type=float, default=0.995)
+    parser.add_argument("--memory-size", type=int, default=20000)
+    parser.add_argument(
+        "--frontier-channel",
+        action="store_true",
+        help="Add a third input channel marking hidden cells adjacent to revealed numbered cells.",
+    )
     parser.add_argument(
         "--progress-every",
         type=int,
@@ -371,6 +393,9 @@ if __name__ == "__main__":
         loss_plot_path=args.loss_plot_path,
         model_type=args.model_type,
         reward_mode=args.reward_mode,
+        frontier_bonus=args.frontier_bonus,
         epsilon_min=args.epsilon_min,
         epsilon_decay=args.epsilon_decay,
+        memory_size=args.memory_size,
+        use_frontier_channel=args.frontier_channel,
     )

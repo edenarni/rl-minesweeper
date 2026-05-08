@@ -47,6 +47,52 @@ class UniformReplayBuffer:
         # Uniform replay ignores priority updates.
         _ = indices, priorities
 
+    def export_state(self) -> dict[str, Any]:
+        """Serialize replay memory for checkpointing."""
+        transitions = list(self.memory)
+        if transitions:
+            states, actions, rewards, next_states, dones = zip(*transitions)
+            state_array = np.stack(states).astype(np.float32, copy=False)
+            action_array = np.asarray(actions, dtype=np.int64)
+            reward_array = np.asarray(rewards, dtype=np.float32)
+            next_state_array = np.stack(next_states).astype(np.float32, copy=False)
+            done_array = np.asarray(dones, dtype=np.bool_)
+        else:
+            state_array = np.empty((0,), dtype=np.float32)
+            action_array = np.empty((0, 2), dtype=np.int64)
+            reward_array = np.empty((0,), dtype=np.float32)
+            next_state_array = np.empty((0,), dtype=np.float32)
+            done_array = np.empty((0,), dtype=np.bool_)
+
+        return {
+            "type": "uniform",
+            "capacity": self.capacity,
+            "states": torch.from_numpy(state_array),
+            "actions": torch.from_numpy(action_array),
+            "rewards": torch.from_numpy(reward_array),
+            "next_states": torch.from_numpy(next_state_array),
+            "dones": torch.from_numpy(done_array),
+        }
+
+    def import_state(self, state: dict[str, Any]) -> None:
+        """Restore replay memory from a checkpoint."""
+        states = state["states"].cpu().numpy()
+        actions = state["actions"].cpu().numpy()
+        rewards = state["rewards"].cpu().numpy()
+        next_states = state["next_states"].cpu().numpy()
+        dones = state["dones"].cpu().numpy()
+
+        self.memory.clear()
+        for index in range(len(rewards)):
+            transition: Transition = (
+                np.array(states[index], dtype=np.float32, copy=True),
+                (int(actions[index][0]), int(actions[index][1])),
+                float(rewards[index]),
+                np.array(next_states[index], dtype=np.float32, copy=True),
+                bool(dones[index]),
+            )
+            self.memory.append(transition)
+
     def __len__(self) -> int:
         return len(self.memory)
 
@@ -111,6 +157,58 @@ class PrioritizedReplayBuffer:
             self.priorities[int(idx)] = adjusted
             self.max_priority = max(self.max_priority, adjusted)
 
+    def export_state(self) -> dict[str, Any]:
+        """Serialize replay memory and priorities for checkpointing."""
+        if self.memory:
+            states, actions, rewards, next_states, dones = zip(*self.memory)
+            state_array = np.stack(states).astype(np.float32, copy=False)
+            action_array = np.asarray(actions, dtype=np.int64)
+            reward_array = np.asarray(rewards, dtype=np.float32)
+            next_state_array = np.stack(next_states).astype(np.float32, copy=False)
+            done_array = np.asarray(dones, dtype=np.bool_)
+        else:
+            state_array = np.empty((0,), dtype=np.float32)
+            action_array = np.empty((0, 2), dtype=np.int64)
+            reward_array = np.empty((0,), dtype=np.float32)
+            next_state_array = np.empty((0,), dtype=np.float32)
+            done_array = np.empty((0,), dtype=np.bool_)
+
+        return {
+            "type": "prioritized",
+            "capacity": self.capacity,
+            "states": torch.from_numpy(state_array),
+            "actions": torch.from_numpy(action_array),
+            "rewards": torch.from_numpy(reward_array),
+            "next_states": torch.from_numpy(next_state_array),
+            "dones": torch.from_numpy(done_array),
+            "priorities": torch.from_numpy(self.priorities.copy()),
+            "position": self.position,
+            "max_priority": self.max_priority,
+        }
+
+    def import_state(self, state: dict[str, Any]) -> None:
+        """Restore replay memory and priorities from a checkpoint."""
+        states = state["states"].cpu().numpy()
+        actions = state["actions"].cpu().numpy()
+        rewards = state["rewards"].cpu().numpy()
+        next_states = state["next_states"].cpu().numpy()
+        dones = state["dones"].cpu().numpy()
+
+        self.memory = []
+        for index in range(len(rewards)):
+            transition: Transition = (
+                np.array(states[index], dtype=np.float32, copy=True),
+                (int(actions[index][0]), int(actions[index][1])),
+                float(rewards[index]),
+                np.array(next_states[index], dtype=np.float32, copy=True),
+                bool(dones[index]),
+            )
+            self.memory.append(transition)
+
+        self.priorities = state["priorities"].cpu().numpy().astype(np.float32, copy=True)
+        self.position = int(state["position"])
+        self.max_priority = float(state["max_priority"])
+
     def __len__(self) -> int:
         return len(self.memory)
 
@@ -135,12 +233,12 @@ class MLPDQN(nn.Module):
 class CNNDQN(nn.Module):
     """Small CNN that maps 2-channel board state -> Q-value for each board cell."""
 
-    def __init__(self, rows: int, cols: int) -> None:
+    def __init__(self, rows: int, cols: int, input_channels: int = 2) -> None:
         super().__init__()
         self.rows = rows
         self.cols = cols
         self.net = nn.Sequential(
-            nn.Conv2d(2, 32, kernel_size=3, padding=1),
+            nn.Conv2d(input_channels, 32, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.ReLU(),
@@ -155,12 +253,12 @@ class CNNDQN(nn.Module):
 class DeepCNNDQN(nn.Module):
     """Slightly deeper CNN variant with one extra spatial convolution."""
 
-    def __init__(self, rows: int, cols: int) -> None:
+    def __init__(self, rows: int, cols: int, input_channels: int = 2) -> None:
         super().__init__()
         self.rows = rows
         self.cols = cols
         self.net = nn.Sequential(
-            nn.Conv2d(2, 32, kernel_size=3, padding=1),
+            nn.Conv2d(input_channels, 32, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=3, padding=1),
             nn.ReLU(),
@@ -197,12 +295,15 @@ class DQNAgent:
         beta_start: float = 0.4,
         beta_end: float = 1.0,
         priority_epsilon: float = 1e-5,
+        use_frontier_channel: bool = False,
     ) -> None:
         """Initialize DQN components."""
         self.rows = rows
         self.cols = cols
         self.num_actions = rows * cols
-        self.state_dim = 2 * rows * cols
+        self.use_frontier_channel = use_frontier_channel
+        self.input_channels = 3 if use_frontier_channel else 2
+        self.state_dim = self.input_channels * rows * cols
         self.model_type = model_type.lower()
         if self.model_type not in {"mlp", "cnn", "cnn_deep"}:
             raise ValueError("model_type must be 'mlp', 'cnn', or 'cnn_deep'")
@@ -236,11 +337,11 @@ class DQNAgent:
             self.policy_net: nn.Module = MLPDQN(self.state_dim, self.num_actions).to(self.device)
             self.target_net: nn.Module = MLPDQN(self.state_dim, self.num_actions).to(self.device)
         elif self.model_type == "cnn":
-            self.policy_net = CNNDQN(self.rows, self.cols).to(self.device)
-            self.target_net = CNNDQN(self.rows, self.cols).to(self.device)
+            self.policy_net = CNNDQN(self.rows, self.cols, input_channels=self.input_channels).to(self.device)
+            self.target_net = CNNDQN(self.rows, self.cols, input_channels=self.input_channels).to(self.device)
         else:
-            self.policy_net = DeepCNNDQN(self.rows, self.cols).to(self.device)
-            self.target_net = DeepCNNDQN(self.rows, self.cols).to(self.device)
+            self.policy_net = DeepCNNDQN(self.rows, self.cols, input_channels=self.input_channels).to(self.device)
+            self.target_net = DeepCNNDQN(self.rows, self.cols, input_channels=self.input_channels).to(self.device)
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
 
@@ -279,6 +380,7 @@ class DQNAgent:
             "beta_start": self.beta_start,
             "beta_end": self.beta_end,
             "priority_epsilon": self.priority_epsilon,
+            "use_frontier_channel": self.use_frontier_channel,
         }
 
     def save_checkpoint(self, path: str | Path, metadata: dict[str, Any] | None = None) -> None:
@@ -293,6 +395,8 @@ class DQNAgent:
                 "optimizer_state_dict": self.optimizer.state_dict(),
                 "epsilon": self.epsilon,
                 "learn_steps": self.learn_steps,
+                "rng_state": self.rng.bit_generator.state,
+                "replay_buffer_state": self.memory.export_state(),
                 "metadata": metadata or {},
             },
             checkpoint_path,
@@ -301,7 +405,7 @@ class DQNAgent:
     @classmethod
     def load_checkpoint(cls, path: str | Path, device: str | None = None) -> "DQNAgent":
         """Load a saved DQN agent checkpoint."""
-        checkpoint = torch.load(Path(path), map_location=device or "cpu")
+        checkpoint = torch.load(Path(path), map_location=device or "cpu", weights_only=False)
         config = dict(checkpoint["config"])
         config["device"] = device
 
@@ -312,6 +416,12 @@ class DQNAgent:
             agent.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         agent.epsilon = float(checkpoint.get("epsilon", config.get("epsilon", 0.0)))
         agent.learn_steps = int(checkpoint.get("learn_steps", 0))
+        replay_buffer_state = checkpoint.get("replay_buffer_state")
+        if replay_buffer_state is not None:
+            agent.memory.import_state(replay_buffer_state)
+        rng_state = checkpoint.get("rng_state")
+        if rng_state is not None:
+            agent.rng.bit_generator.state = rng_state
         agent.policy_net.eval()
         agent.target_net.eval()
         return agent
@@ -323,8 +433,26 @@ class DQNAgent:
         anneal_fraction = min(1.0, self.learn_steps / max(1, self.memory_size))
         return self.beta_start + anneal_fraction * (self.beta_end - self.beta_start)
 
+    def _frontier_channel(self, observation: np.ndarray) -> np.ndarray:
+        """Mark hidden cells adjacent to at least one revealed numbered cell."""
+        frontier = np.zeros((self.rows, self.cols), dtype=np.float32)
+        for row in range(self.rows):
+            for col in range(self.cols):
+                if observation[row, col] != -1:
+                    continue
+                for nr in range(max(0, row - 1), min(self.rows, row + 2)):
+                    for nc in range(max(0, col - 1), min(self.cols, col + 2)):
+                        if nr == row and nc == col:
+                            continue
+                        if observation[nr, nc] > 0:
+                            frontier[row, col] = 1.0
+                            break
+                    if frontier[row, col] == 1.0:
+                        break
+        return frontier
+
     def _encode_observation(self, observation: np.ndarray) -> np.ndarray:
-        """Build a 2-channel board state.
+        """Build the network input channels.
 
         Channel 1 (hidden mask):
         - 1.0 where cell is hidden (observation == -1)
@@ -333,11 +461,18 @@ class DQNAgent:
         Channel 2 (revealed normalized values):
         - observation / 8.0 for revealed cells (0.0 .. 1.0)
         - 0.0 for hidden cells
+
+        Optional channel 3 (frontier):
+        - 1.0 for hidden cells next to at least one revealed numbered cell
+        - 0.0 otherwise
         """
         obs = observation.astype(np.float32)
         hidden_mask = (obs == -1.0).astype(np.float32)
         revealed_values = np.where(obs >= 0.0, obs / 8.0, 0.0).astype(np.float32)
-        return np.stack([hidden_mask, revealed_values], axis=0)
+        channels = [hidden_mask, revealed_values]
+        if self.use_frontier_channel:
+            channels.append(self._frontier_channel(observation))
+        return np.stack(channels, axis=0)
 
     def _network_forward(self, network: nn.Module, state_batch: torch.Tensor) -> torch.Tensor:
         """Forward pass helper for either MLP or CNN model type."""

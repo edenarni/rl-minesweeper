@@ -121,6 +121,27 @@ def test_revealing_all_safe_cells_wins_game() -> None:
     assert final_info.get("result") == "win"
 
 
+def test_frontier_reward_adds_bonus_for_safe_frontier_move() -> None:
+    env = MinesweeperEnv(rows=3, cols=3, num_mines=1, seed=8, reward_mode="frontier", frontier_bonus=0.5)
+    env.hidden_board = np.array(
+        [
+            [1, 1, 1],
+            [1, 1, 1],
+            [0, 1, -1],
+        ]
+    )
+    env.visible_board = np.full((3, 3), -1, dtype=int)
+    env.visible_board[1, 1] = 1
+    env.done = False
+    env.lost = False
+
+    _, reward, done, info = env.step((0, 0))
+
+    assert reward == 1.5
+    assert done is False
+    assert info.get("frontier_action") == 1
+
+
 def test_render_hidden_runs_without_crashing(capsys) -> None:
     env = MinesweeperEnv(rows=5, cols=5, num_mines=3, seed=12)
     env.reset()
