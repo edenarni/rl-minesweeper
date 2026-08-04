@@ -193,6 +193,55 @@ Tkinter viewer for:
 - changing board settings
 - stepping through one move at a time
 
+## Experiment Process
+
+The project was developed as an iterative experiment loop rather than a single training run.
+
+Typical process:
+- Start from a simple baseline and verify the environment with tests.
+- Compare baseline agents first: `RandomAgent`, then `QLearningAgent`, then DQN.
+- Change one major variable at a time:
+  - state encoding
+  - model architecture (`mlp`, `cnn`, `cnn_deep`)
+  - replay method (`uniform` vs `prioritized`)
+  - reward mode (`classic`, `progress`, `frontier`)
+  - exploration schedule (`epsilon_min`, `epsilon_decay`)
+- Run focused experiments on one main seed for fast iteration.
+- Re-run promising setups on multiple seeds before treating them as stronger evidence.
+- Save the best checkpoints to `models/` so they can be reused in the UI without retraining.
+
+The main experiment history is tracked in `IMPROVEMENTS_REPORT.md`, including commands, per-run metrics, and conclusions after each change.
+
+## Results
+
+The main results recorded so far are:
+- Separating the DQN input into a hidden-mask channel plus normalized revealed-value channel was a clear improvement over the earlier single-channel encoding.
+- CNN-based DQN outperformed the MLP DQN consistently on win rate and reward in multi-seed tests on the smaller board.
+- Switching from MSE loss to Huber loss made results worse in this project, so MSE remained the preferred loss.
+- Prioritized replay was useful as an experiment option, but uniform replay remained stronger than the tested prioritized-replay settings.
+- Reward shaping based on newly revealed cells (`progress` mode) improved focused results enough to justify deeper follow-up experiments.
+- Lowering the exploration floor and using slower epsilon decay improved the strongest focused `cnn_deep` runs.
+- Curriculum-style training was added for larger-board experiments so compatible CNN weights could transfer between stages.
+
+Representative reported numbers:
+- On the `5x5` board, multi-seed comparison showed CNN DQN outperforming MLP DQN:
+  - MLP DQN: `46.22% +- 1.03%` win rate
+  - CNN DQN: `57.96% +- 2.16%` win rate
+- A stronger focused `5x5` `cnn_deep` run reached:
+  - `69.20%` win rate
+  - `16.085` average reward
+  - `5.633` average steps
+- On focused `8x8` curriculum/frontier experiments, the repo now contains saved checkpoints from longer training runs for continued evaluation and playback.
+
+## Conclusions
+
+The current conclusions from the recorded experiments are:
+- Spatial structure matters for Minesweeper, so CNN-based models are a better fit than a plain MLP baseline.
+- State representation matters almost as much as architecture; explicitly separating hidden/revealed information made learning substantially easier.
+- Not every standard RL upgrade helped here. Huber loss and the tested prioritized replay settings both underperformed simpler defaults.
+- Exploration tuning has a large effect on final Minesweeper performance because late random moves are especially costly.
+- The project is past the proof-of-concept stage: it now has reproducible experiments, saved checkpoints, a UI for replay, and a documented path for continuing larger-board training.
+
 ## Tests
 
 Current tests cover:
