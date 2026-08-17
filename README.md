@@ -9,7 +9,6 @@ The project focuses on the engineering side of RL work: environment design, stat
 Experiment documentation:
 - [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) for the full chronological log
 - [EXPERIMENT_LOG.pdf](EXPERIMENT_LOG.pdf) for the PDF export of the full log
-- [EXPERIMENT_LOG.txt](EXPERIMENT_LOG.txt) for a GitHub-rendered plain-text view of the full log
 
 The repo includes:
 - A NumPy-based Minesweeper environment with several reward schemes
