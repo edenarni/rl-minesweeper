@@ -234,7 +234,7 @@ Typical process:
 - Re-run promising setups on multiple seeds before treating them as stronger evidence.
 - Save a small set of representative checkpoints to `models/` so they can be reused in the UI without retraining.
 
-The main experiment history is tracked in `EXPERIMENT_LOG.md`, including commands, per-run metrics, and conclusions after each change. A shorter GitHub-friendly summary lives in `EXPERIMENTS.md`.
+The main experiment history is tracked in `EXPERIMENT_LOG.md`, including commands, per-run metrics, and conclusions after each change. A PDF export lives in `EXPERIMENT_LOG.pdf`.
 
 ## Results
 
