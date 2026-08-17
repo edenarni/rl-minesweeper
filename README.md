@@ -7,7 +7,6 @@ Reinforcement learning for Minesweeper with a custom environment, tabular Q-lear
 The project focuses on the engineering side of RL work: environment design, state representation, model comparisons, reward shaping, replay strategy experiments, curriculum learning, and a small Tkinter viewer for replaying saved checkpoints.
 
 Experiment documentation:
-- [EXPERIMENTS.md](EXPERIMENTS.md) for the GitHub-friendly summary
 - [EXPERIMENT_LOG.md](EXPERIMENT_LOG.md) for the full chronological log
 - [EXPERIMENT_LOG.pdf](EXPERIMENT_LOG.pdf) for a GitHub-previewable export of the full log
 
