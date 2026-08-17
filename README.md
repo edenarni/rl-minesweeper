@@ -1,6 +1,10 @@
 # RL Minesweeper
 
-A small Python reinforcement-learning project built around a custom Minesweeper environment.
+Reinforcement learning for Minesweeper with a custom environment, tabular Q-learning, and DQN variants built in PyTorch.
+
+![Trained DQN playing Minesweeper](assets/minesweeper-agent-demo.gif)
+
+The project focuses on the engineering side of RL work: environment design, state representation, model comparisons, reward shaping, replay strategy experiments, curriculum learning, and a small Tkinter viewer for replaying saved checkpoints.
 
 The repo includes:
 - A NumPy-based Minesweeper environment with several reward schemes
@@ -64,12 +68,19 @@ PyTorch implementation with:
 
 ## Requirements
 
+Install the Python dependencies with:
+
+```bash
+pip install -r requirements.txt
+```
+
 The codebase uses:
 - Python 3
 - `numpy`
 - `torch`
+- `pytest`
+- `Pillow` for the README demo asset workflow
 - `tkinter` for the UI
-- `pytest` for tests
 
 Optional:
 - `matplotlib` for PNG loss plots in DQN training
@@ -113,6 +124,15 @@ Run tests:
 ```bash
 pytest
 ```
+
+## Included Demo Assets
+
+The repo intentionally keeps only a small set of reusable artifacts:
+- a handful of checkpoints under `models/` for UI playback and quick evaluation
+- one README demo GIF generated from the saved `5x5` DQN checkpoint
+- one representative plot in `plots/encoding_comparison.svg`
+
+Large experimental checkpoints, duplicate repo snapshots, and regenerated cache/output files are excluded to keep the portfolio version focused.
 
 ## Main Scripts
 
@@ -208,7 +228,7 @@ Typical process:
   - exploration schedule (`epsilon_min`, `epsilon_decay`)
 - Run focused experiments on one main seed for fast iteration.
 - Re-run promising setups on multiple seeds before treating them as stronger evidence.
-- Save the best checkpoints to `models/` so they can be reused in the UI without retraining.
+- Save a small set of representative checkpoints to `models/` so they can be reused in the UI without retraining.
 
 The main experiment history is tracked in `IMPROVEMENTS_REPORT.md`, including commands, per-run metrics, and conclusions after each change.
 

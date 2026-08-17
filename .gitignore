@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local training outputs
+models/*
+!models/README.md
+!models/best_cnn_deep_5x5_seed55.pt
+!models/best_cnn_deep_8x8_10m_curriculum_seed55.pt
+!models/best_cnn_deep_8x8_10m_progress_seed55.pt
+!models/best_cnn_deep_10x10_15m_seed55.pt
+
+# Generated plots and ad hoc experiment artifacts
+dqn_loss_curve*.svg
+dqn_loss_curve*.png
+
