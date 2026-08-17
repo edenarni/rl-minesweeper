@@ -1,4 +1,4 @@
-# Improvements Report
+# Experiment Log
 
 This file is an ongoing experiment log for model/environment changes.
 After each improvement, add one new entry with the exact training command and final metrics.
